@@ -15,36 +15,51 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+  build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: subosito/flutter-action@v2
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
 
+      - name: Install dependencies
+        run: flutter pub get
+
       - name: Build Web
         run: |
-          flutter pub get
           flutter build web --release \
+            --no-wasm-dry-run \
             --base-href "/${{ github.event.repository.name }}/" \
             --dart-define=GOOGLE_MAPS_API_KEY=${{ secrets.GOOGLE_MAPS_API_KEY }}
 
       - name: Inject Google Maps API key into index.html
-        if: ${{ secrets.GOOGLE_MAPS_API_KEY != '' }}
+        env:
+          GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
         run: |
-          sed -i "s/YOUR_API_KEY/${{ secrets.GOOGLE_MAPS_API_KEY }}/g" build/web/index.html
+          if [ -n "$GOOGLE_MAPS_API_KEY" ]; then
+            sed -i "s/YOUR_API_KEY/${GOOGLE_MAPS_API_KEY}/g" build/web/index.html
+          fi
 
-      - uses: actions/configure-pages@v5
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
 
-      - uses: actions/upload-pages-artifact@v3
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
         with:
           path: build/web
 
-      - id: deployment
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
         uses: actions/deploy-pages@v4
